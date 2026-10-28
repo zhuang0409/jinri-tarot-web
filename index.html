@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>今日塔罗</title>
+<meta name="description" content="写下一个梦或一种感受，抽出一张会动的抽象牌。全部在浏览器里生成，不联网，不用 AI。">
+<style>
+/* Layout: a quiet two-column reading room. Writing on the left, one tall card on the right that turns over to show its words. */
+:root {
+  --ink: #0b0a17;
+  --ink-2: #17142b;
+  --paper: #ece4d4;
+  --muted: #a39cb3;
+  --gold: #d9b261;
+  --line: #2f2a4a;
+  --display: "Cormorant Garamond", "Noto Serif SC", "Songti SC", serif;
+  --serif: "Noto Serif SC", "Songti SC", serif;
+  --sans: "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--ink); }
+body {
+  margin: 0;
+  color: var(--paper);
+  font: 16px/1.7 var(--sans);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 64px;
+}
+.wrap {
+  max-width: 1000px; margin: 0 auto;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 380px);
+  gap: 24px 56px; align-items: start;
+}
+header { grid-column: 1 / -1; }
+h1 { font: 600 clamp(40px, 7vw, 64px)/1.1 var(--serif); margin: 0 0 12px; letter-spacing: .04em; }
+.sub { margin: 0; color: var(--muted); max-width: 34em; text-wrap: balance; }
+
+form { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+label { font: 500 14px/1.4 var(--sans); letter-spacing: .06em; color: var(--gold); }
+textarea {
+  width: 100%; min-height: 190px; resize: vertical;
+  background: var(--ink-2); color: var(--paper);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 16px; font: 17px/1.8 var(--serif);
+}
+textarea::placeholder { color: #756e88; }
+textarea:focus-visible, button:focus-visible, .card:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+button { font: 500 15px/1 var(--sans); letter-spacing: .08em; cursor: pointer; border-radius: 6px; }
+.primary { background: var(--gold); color: #1b1408; border: 0; padding: 14px 28px; }
+.primary:disabled { opacity: .55; cursor: progress; }
+.ghost { background: transparent; color: var(--paper); border: 1px solid var(--line); padding: 12px 18px; }
+.ghost:hover:not(:disabled) { border-color: var(--gold); }
+.ghost:disabled { opacity: .4; cursor: default; }
+.tries { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.tries button { background: none; border: 1px solid var(--line); color: var(--muted); padding: 7px 12px; font: 400 13px/1.4 var(--sans); letter-spacing: 0; text-align: left; }
+.tries button:hover { color: var(--paper); border-color: var(--muted); }
+.tries-label { font-size: 13px; color: var(--muted); margin: 6px 0 -6px; }
+.status { min-height: 1.7em; margin: 0; color: var(--muted); font-size: 14px; }
+.status.err { color: #e7a58f; }
+.care { margin: 0; padding: 14px 16px; border: 1px solid var(--gold); border-radius: 6px; font-size: 14px; line-height: 1.75; }
+.privacy { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.7; }
+
+.stage { display: flex; flex-direction: column; align-items: center; gap: 14px; min-width: 0; }
+.card-wrap { width: 100%; max-width: 360px; aspect-ratio: 2 / 3; perspective: 1400px; }
+.card {
+  all: unset; display: block; box-sizing: border-box; cursor: pointer;
+  width: 100%; height: 100%; position: relative; transform-style: preserve-3d;
+  transition: transform .8s cubic-bezier(.3, .1, .2, 1);
+  border-radius: 14px;
+}
+.card.flipped { transform: rotateY(180deg); }
+.card.reading { animation: breathe 1.6s ease-in-out infinite; }
+.face { position: absolute; inset: 0; border-radius: 14px; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; box-shadow: 0 18px 50px rgba(0, 0, 0, .55); }
+.face canvas { width: 100%; height: 100%; display: block; }
+.back { transform: rotateY(180deg); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 12%; gap: 22px; border: 2px solid var(--gold); }
+.back::before { content: ""; position: absolute; inset: 10px; border: 1px solid rgba(217, 178, 97, .55); border-radius: 8px; pointer-events: none; }
+.back svg { width: 38%; height: auto; }
+.back h2 { font: 600 clamp(28px, 9vw, 40px)/1.2 var(--serif); margin: 0; color: #f4e9d2; letter-spacing: .06em; overflow-wrap: anywhere; }
+.back .rule { width: 90px; height: 1px; background: var(--gold); opacity: .7; }
+.back p { margin: 0; font: 500 clamp(15px, 4.2vw, 18px)/1.8 var(--serif); color: #dcd2c2; overflow-wrap: anywhere; }
+.hint { margin: 0; font-size: 13px; color: var(--muted); text-align: center; }
+.tag { font-size: 12px; letter-spacing: .12em; color: var(--gold); margin: 0; min-height: 1.2em; }
+@keyframes breathe { 50% { opacity: .55; } }
+@media (max-width: 780px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 28px; } }
+@media (prefers-reduced-motion: reduce) { .card { transition: none; } .card.reading { animation: none; } }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>今日塔罗</h1>
+    <p class="sub">写下一个梦，或此刻的感受。牌会把它画出来，不预言，只映照你自己的话。正面是画，翻过来才有字。</p>
+  </header>
+
+  <form id="form" autocomplete="off">
+    <label for="text">你的梦，或你现在的感受</label>
+    <textarea id="text" maxlength="2000" placeholder="比如：梦见自己在一座没有出口的图书馆里，找一本一直找不到的书。"></textarea>
+    <p class="tries-label">不知道写什么，可以点一个试试</p>
+    <ul class="tries" id="tries"></ul>
+    <div class="row">
+      <button class="primary" id="draw" type="submit">抽牌</button>
+      <button class="ghost" id="again" type="button" disabled>再抽一次</button>
+      <button class="ghost" id="save" type="button" hidden>保存这张牌</button>
+    </div>
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+    <p class="care" id="care" hidden>如果你有伤害自己的念头，请现在就联系身边的人，或当地的急救电话。在德国，Telefonseelsorge 的热线 0800 111 0 111 免费，24 小时有人接听。这张牌只是一幅画，不能替代真人的陪伴。</p>
+    <p class="privacy">整张牌在你的浏览器里生成：不联网，不用任何 AI，你写的话不会离开这个页面，也不会被保存。它靠一份情绪词表判断，所以读得比较粗。牌背面的那句话，就是你自己写的话。同一段话，每次「再抽一次」都会画出不一样的牌。</p>
+  </form>
+
+  <div class="stage">
+    <p class="tag" id="tag">示例牌</p>
+    <div class="card-wrap">
+      <button class="card" id="card" type="button" aria-label="翻面">
+        <div class="face front"><canvas id="cv"></canvas></div>
+        <div class="face back" id="back">
+          <svg viewBox="-50 -50 100 100" aria-hidden="true">
+            <circle r="12" fill="none" stroke="#ffd48a" stroke-width="1.4" id="o1"/>
+            <circle r="24" fill="none" stroke="#ffd48a" stroke-width="1.2" opacity=".55" id="o2"/>
+            <circle r="37" fill="none" stroke="#ffd48a" stroke-width="1" opacity=".3" id="o3"/>
+            <circle r="1.8" fill="#fff3d8"/>
+          </svg>
+          <h2 id="title">示例</h2>
+          <div class="rule"></div>
+          <p id="line">这是一张示例牌。写下你的话，抽一张自己的。</p>
+        </div>
+      </button>
+    </div>
+    <p class="hint" id="hint">点一下牌，翻到背面看字</p>
+  </div>
+</div>
+
+<script>
+const TAU = Math.PI * 2;
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const smooth = x => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
+const GOLD = [217, 178, 97];
+
+/* ---------- colour helpers ---------- */
+const hexRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const rgbHex = c => "#" + c.map(v => Math.round(clamp(v, 0, 255)).toString(16).padStart(2, "0")).join("");
+const mix = (a, b, f) => a.map((v, i) => v + (b[i] - v) * f);
+const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+function palAt(pal, u, cyclic) {
+  const arr = cyclic ? [...pal, pal[0]] : pal, m = arr.length - 1;
+  const x = (cyclic ? ((u % 1) + 1) % 1 : clamp(u, 0, 1)) * m;
+  const i = Math.min(Math.floor(x), m - 1);
+  return mix(arr[i], arr[i + 1], x - i);
+}
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/* ---------- drawing surface (unit coords: x -1..1, y -1.5..1.5) ---------- */
+let ctx, W, H, PX;
+const X = x => (x + 1) * W / 2;
+const Y = y => (1.5 - y) * H / 3;
+const PASSES = [[5, .06], [2.4, .16], [1, 1]];
+function path(pts) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))); }
+function glow(pts, col, lw, alpha = 1) {
+  if (pts.length < 2) return;
+  for (const [s, a] of PASSES) { path(pts); ctx.strokeStyle = rgba(col, a * alpha); ctx.lineWidth = lw * s * PX; ctx.stroke(); }
+}
+/* a line whose colour and width change along its length, drawn in a few chunks */
+function taper(pts, colAt, wAt, chunks = 10, alpha = 1) {
+  const n = pts.length - 1;
+  for (let c = 0; c < chunks; c++) {
+    const i0 = Math.floor(c * n / chunks), i1 = Math.max(i0 + 1, Math.floor((c + 1) * n / chunks));
+    const m = (c + .5) / chunks;
+    glow(pts.slice(i0, i1 + 1), colAt(m), wAt(m), alpha);
+  }
+}
+function disc(x, y, s, col, a) {
+  ctx.beginPath(); ctx.arc(X(x), Y(y), Math.sqrt(s) / 2 * 1.39 * W / 600, 0, TAU);
+  ctx.fillStyle = rgba(col, a); ctx.fill();
+}
+function background(bg) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, rgbHex(bg[0])); g.addColorStop(1, rgbHex(bg[1]));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+function frame() {
+  const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(X(x), Y(y + h), w * W / 2, h * H / 3, r * W / 2) : ctx.rect(X(x), Y(y + h), w * W / 2, h * H / 3); };
+  rr(-.96, -1.46, 1.92, 2.92, .06); ctx.strokeStyle = rgba(GOLD, 1); ctx.lineWidth = 2.2 * PX; ctx.stroke();
+  rr(-.92, -1.42, 1.84, 2.84, .05); ctx.strokeStyle = rgba(GOLD, .6); ctx.lineWidth = .8 * PX; ctx.stroke();
+}
+const circle = (cx, cy, r, n = 120) => Array.from({ length: n + 1 }, (_, i) => [cx + r * Math.cos(i / n * TAU), cy + r * Math.sin(i / n * TAU)]);
+
+function dust(env, w, col) {
+  for (const d of env.dust) { const tw = .5 + .5 * Math.sin(w + d.ph); disc(d.x, d.y, d.sz * (.4 + tw), col, .35 * tw + .1); }
+}
+
+/* ---------- design 1: open-rings ---------- */
+function openRings(t, sp, env) {
+  const T = 6 / sp.speed, w = TAU * t / T, K = sp.rings, C = [0, -.1], STAR = [0, 1.22], tn = sp.tension, p = env.p;
+  const pal = sp.palette, cool = mix(pal[0], [255, 255, 255], .6);
+  dust(env, w, mix(pal[0], [255, 255, 255], .5));
+  for (const off of [0, .5]) {
+    const ph = (t / T + off) % 1;
+    glow(circle(C[0], C[1], .1 + .78 * ph, 160), pal[pal.length - 1], .6, .35 * Math.pow(Math.sin(Math.PI * ph), 1.5));
+  }
+  const wob = .008 + .02 * tn;
+  for (let k = 0; k < K; k++) {
+    const r = (.17 + (.6 / (K - 1)) * k) * (1 + wob * Math.sin(w + .7 * k + p));
+    const gm = Math.PI / 2 + .1 * Math.sin(w + k + p), gap = .16 + .42 * k / (K - 1);
+    const pts = [], a0 = gm + gap / 2, a1 = gm + TAU - gap / 2;
+    for (let i = 0; i <= 220; i++) {
+      const a = a0 + (a1 - a0) * i / 220, rr = r * (1 + wob * Math.sin(5 * a + 2 * w + k));
+      pts.push([C[0] + rr * Math.cos(a), C[1] + rr * Math.sin(a)]);
+    }
+    glow(pts, palAt(pal, k / (K - 1)), 1.5);
+  }
+  const reach = .6 + .3 * sp.hope + .07 * Math.sin(w), a1 = .03 + .03 * tn, th = [];
+  for (let i = 0; i <= 120; i++) {
+    const s = i / 120;
+    th.push([a1 * Math.sin(Math.PI * s) * Math.sin(TAU * 1.5 * s - w + p) + .02 * Math.sin(Math.PI * s) * Math.sin(TAU * 4 * s + 2 * w),
+             C[1] + s * reach * (STAR[1] - C[1])]);
+  }
+  const warm = pal[pal.length - 1];
+  taper(th, m => mix([255, 238, 190], warm, m * .6), m => 2.4 * (1 - m) + .7, 24);
+  disc(th[120][0], th[120][1], 14, [255, 204, 128], 1);
+  const tw2 = .5 + .5 * Math.sin(2 * w + 1);
+  for (const [s, a] of [[900, .04], [300, .1], [70, .35 + .15 * tw2], [14, .7 + .2 * tw2]]) disc(STAR[0], STAR[1], s, cool, a);
+  const b = .5 + .5 * Math.sin(w - Math.PI / 2);
+  for (const [s, a] of [[1500, .05], [600, .12], [200, .3], [40 + 25 * b, 1]]) disc(C[0], C[1], s * (.9 + .2 * b), [255, 235, 190], a);
+}
+
+/* ---------- design 2: knot-and-flower ---------- */
+function knotFlower(t, sp, env) {
+  const T = 6 / sp.speed, w = TAU * t / T, C = [0, -.1], tn = sp.tension, p = env.p, pal = sp.palette;
+  const cold = pal[0], warm = pal[pal.length - 1];
+  dust(env, w, mix(cold, [255, 255, 255], .4));
+  const opened = (.5 + .5 * Math.sin(w - Math.PI / 2)) * (.25 + .65 * sp.hope), loosen = 1 + .18 * opened;
+  const LIGHTS = [[-.68, 1.15], [.68, 1.15]], lightCol = mix(cold, [255, 255, 255], .55);
+  LIGHTS.forEach((L, idx) => {
+    const sign = idx ? -1 : 1, d = [L[0] - C[0], L[1] - C[1]], len = Math.hypot(d[0], d[1]), nrm = [-d[1] / len, d[0] / len];
+    const st = [C[0] + d[0] * .3, C[1] + d[1] * .3], pts = [];
+    for (let i = 0; i <= 80; i++) {
+      const s = i / 80, wv = (.008 + .012 * tn) * Math.sin(Math.PI * s) * Math.sin(TAU * 7 * s) * Math.cos(3 * w + sign);
+      pts.push([st[0] + (L[0] - st[0]) * s + wv * nrm[0], st[1] + (L[1] - st[1]) * s + wv * nrm[1]]);
+    }
+    glow(pts, lightCol, .9, .8);
+    const fl = .5 + .5 * Math.sin(2 * w + sign);
+    for (const [s, a] of [[700, .03], [220, .07], [45, .25 + .1 * fl], [10, .6]]) disc(L[0], L[1], s, lightCol, a);
+  });
+  const base = (.34 - .12 * tn) * loosen, amp = .25 + .35 * tn;
+  for (let i = 0; i < 6; i++) {
+    const ph = i * 1.07, m = i / 5, pts = [];
+    for (let j = 0; j <= 400; j++) {
+      const a = j / 400 * TAU;
+      const r = base * (1 + amp * 1.1 * Math.sin(3 * a + ph + w + p) + amp * .6 * Math.sin(5 * a + 2 * ph - 2 * w) + amp * .3 * Math.sin(8 * a + 3 * ph + 3 * w));
+      const aa = a + .2 * Math.sin(w + ph);
+      pts.push([C[0] + r * Math.cos(aa), C[1] + r * Math.sin(a)]);
+    }
+    glow(pts, mix(cold, warm, m * .55), 1.7, .9);
+  }
+  for (const [s, a] of [[1800, .04 + .04 * opened], [600, .1 + .06 * opened], [160, .25]]) disc(C[0], C[1], s, warm, a);
+  const L = .025 + .15 * opened;
+  for (let j = 0; j < 6; j++) {
+    const th = TAU * j / 6 + Math.PI / 6 + .1 * Math.sin(w + j), d = [Math.cos(th), Math.sin(th)], nrm = [-d[1], d[0]], left = [], right = [];
+    for (let i = 0; i <= 24; i++) {
+      const u = i / 24, half = .38 * L * Math.pow(Math.sin(Math.PI * u), .8);
+      left.push([C[0] + u * L * d[0] + half * nrm[0], C[1] + u * L * d[1] + half * nrm[1]]);
+      right.push([C[0] + u * L * d[0] - half * nrm[0], C[1] + u * L * d[1] - half * nrm[1]]);
+    }
+    path(left.concat(right.reverse())); ctx.closePath();
+    ctx.fillStyle = rgba(mix(warm, [255, 255, 255], j % 2 ? .25 : .05), .9); ctx.fill();
+  }
+  disc(C[0], C[1], 40, [255, 244, 210], 1);
+}
+
+/* ---------- design 3: tentacle-rings ---------- */
+function tentacleRings(t, sp, env) {
+  const K = sp.rings, N = sp.systems, loopS = .8 / sp.speed, stag = 1.5 / sp.speed, hold = 2.5, tn = sp.tension, pal = sp.palette;
+  const total = (N - 1) * stag + K * loopS + hold, tt = t % total;
+  const fade = clamp(tt / .6, 0, 1) * clamp((total - tt) / .6, 0, 1);
+  dust(env, TAU * t / 6, mix(pal[0], [255, 255, 255], .5));
+  const R = Array.from({ length: K + 1 }, (_, i) => .12 + i * (.82 - .12) / Math.max(K - 1, 1));
+  const spin = k => (k % 2 === 0 ? .55 : -.4) * (1 - .5 * k / K) * TAU / loopS;
+  const wa = .5 + tn, wobble = (k, a, tm) => 1 + wa * (.025 * Math.sin(4 * a + 1.7 * tm + k) + .015 * Math.sin(7 * a - 2.3 * tm));
+  const layout = N === 1 ? [[[0, -.05], 1.05]] : Array.from({ length: N }, (_, s) => [[.45 * Math.cos(TAU * s / N + Math.PI / 2), .45 * Math.sin(TAU * s / N + Math.PI / 2) - .05], .55]);
+  ctx.globalAlpha = fade;
+  layout.forEach(([c, sc], s) => {
+    const tl = tt - s * stag;
+    if (tl <= 0) return;
+    const col = k => palAt(pal, k / K + s / N, N > 1), place = (x, y) => [c[0] + sc * x, c[1] + sc * y];
+    const u = Math.min(tl / loopS, K - 1e-6), n = Math.max(Math.floor(u * 120), 2), pen = [], runs = [];
+    let cur = null;
+    for (let i = 0; i < n; i++) {
+      const th = i / (n - 1) * u * TAU, loop = Math.min(Math.floor(th / TAU), K - 1), fr = th / TAU - loop;
+      let r = R[loop] + (R[loop + 1] - R[loop]) * smooth((fr - .7) / .3);
+      if (loop === 0) r = R[0] * smooth(fr / .5);
+      r *= wobble(loop + s + env.p, th, tl);
+      const pt = place(r * Math.cos(th), r * Math.sin(th));
+      pen.push({ th, r });
+      if (!cur || cur.loop !== loop) { const prev = cur && cur.pts[cur.pts.length - 1]; cur = { loop, pts: prev ? [prev] : [] }; runs.push(cur); }
+      cur.pts.push(pt);
+    }
+    runs.forEach(rn => glow(rn.pts, col(rn.loop), 2.2 * (.5 + .5 * sc)));
+    const done = Math.floor(u), last = pen[pen.length - 1];
+    const dot = (k, j) => {
+      if (k < done) { const a = TAU * j / 3 + spin(k) * (tl - (k + 1) * loopS), rr = R[k] * wobble(k + s + env.p, a, tl); return [rr * Math.cos(a), rr * Math.sin(a)]; }
+      if (j) return null;
+      return [last.r * Math.cos(last.th), last.r * Math.sin(last.th)];
+    };
+    for (let k = 0; k < Math.min(done + 1, K) - 1; k++) {
+      const grow = smooth(u - (k + 1));
+      if (grow <= 0) continue;
+      for (let j = 0; j < 3; j++) {
+        const p0 = dot(k, j), p1 = dot(k + 1, j);
+        if (!p0 || !p1) continue;
+        const d = [p1[0] - p0[0], p1[1] - p0[1]], len = Math.hypot(d[0], d[1]) + 1e-9, nrm = [-d[1] / len, d[0] / len], pts = [];
+        for (let i = 0; i <= 28; i++) {
+          const sv = grow * i / 28;
+          const am = (.07 * Math.sin(Math.PI * sv) * Math.sin(TAU * 2.5 * sv - 4 * tl + 2 * j + k + s) + .03 * Math.sin(Math.PI * sv) * Math.sin(TAU * 6 * sv + 7 * tl + k)) * (.5 + tn);
+          pts.push(place(p0[0] + d[0] * sv + am * nrm[0], p0[1] + d[1] * sv + am * nrm[1]));
+        }
+        taper(pts, m => mix(col(k), col(k + 1), m), m => (2.6 * (1 - m) + .8) * (.5 + .5 * sc), 8);
+      }
+    }
+    disc(c[0], c[1], 30 * (.5 + .5 * sc), [255, 255, 255], 1);
+  });
+  ctx.globalAlpha = 1;
+}
+
+
+/* ---------- the other eight cards ---------- */
+const cyc = (t, T) => (t / T) % 1;
+const WHITE = [255, 255, 255];
+const lerp2 = (a, b, f) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+const rot2 = (p, a) => [p[0] * Math.cos(a) - p[1] * Math.sin(a), p[0] * Math.sin(a) + p[1] * Math.cos(a)];
+
+/* 塔: a stack of blocks cracks, lightning, the top falls first, then it builds again */
+function tower(t, sp, env) {
+  const T = 6 / sp.speed, c = cyc(t, T), pal = sp.palette, tn = sp.tension, n = 7, bh = .26, bw = .6;
+  dust(env, TAU * t / T, mix(pal[0], WHITE, .5));
+  glow([[-.9, -1.05], [.9, -1.05]], mix(pal[0], WHITE, .3), 1.2, .6);
+  const fadeIn = clamp(c / .08, 0, 1);
+  for (let i = 0; i < n; i++) {
+    const f = smooth((c - .55 - .04 * (n - 1 - i)) / .3), dir = i % 2 ? 1 : -1;
+    const shake = (.006 + .014 * tn) * Math.sin(TAU * 6 * c + i) * (c > .3 ? 1 : .3) * (1 - f);
+    const cx = shake + dir * .55 * f * (.4 + .1 * i), cy = -1.05 + bh * (i + .5) - 1.1 * f * f, w2 = bw * (1 - .04 * i) / 2;
+    const pts = [[-w2, -bh / 2], [w2, -bh / 2], [w2, bh / 2], [-w2, bh / 2], [-w2, -bh / 2]].map(p => { const q = rot2(p, dir * f); return [cx + q[0], cy + q[1]]; });
+    glow(pts, palAt(pal, i / (n - 1)), 1.6, (1 - .9 * f) * fadeIn);
+  }
+  const lf = Math.max(0, Math.sin(Math.PI * clamp((c - .42) / .16, 0, 1)));
+  if (lf > 0) {
+    const bolt = [[.6, 1.3]];
+    for (let k = 1; k <= 7; k++) { const u = k / 7; bolt.push([.6 - .7 * u + .09 * Math.sin(k * 12.99 + env.p), 1.3 - 1.4 * u + .05 * Math.sin(k * 7.3)]); }
+    glow(bolt, [255, 244, 210], 2, lf * lf * (.6 + .4 * Math.sin(c * 220)));
+  }
+}
+
+/* 星星: stars light one by one and join into a constellation; a drop falls into still water */
+function star(t, sp, env) {
+  const T = 6 / sp.speed, c = cyc(t, T), pal = sp.palette, r = env.rnd, n = 9, hope = sp.hope;
+  dust(env, TAU * t / T, mix(pal[0], WHITE, .5));
+  const P = Array.from({ length: n }, (_, i) => [-.7 + 1.4 * r[2 * i], -.05 + 1.1 * r[2 * i + 1]]).sort((a, b) => a[0] - b[0]);
+  const out = 1 - smooth((c - .86) / .14);
+  for (let i = 0; i < n; i++) {
+    const lit = smooth((c * 1.25 - .08 * i) / .12) * out, col = palAt(pal, i / (n - 1)), tw = .75 + .25 * Math.sin(TAU * 2 * t / T + i * 1.7);
+    if (i < n - 1) { const e = smooth((c * 1.25 - .08 * (i + 1)) / .12) * out; if (e > 0) glow([P[i], lerp2(P[i], P[i + 1], e)], col, .8, .7 * out); }
+    if (lit <= 0) continue;
+    const L = (.04 + .03 * hope) * lit * tw;
+    glow([[P[i][0] - L, P[i][1]], [P[i][0] + L, P[i][1]]], mix(col, WHITE, .5), .9, lit);
+    glow([[P[i][0], P[i][1] - L], [P[i][0], P[i][1] + L]], mix(col, WHITE, .5), .9, lit);
+    for (const [sz, a] of [[260, .08], [90, .2], [20, .9]]) disc(P[i][0], P[i][1], sz * (.6 + .6 * lit), mix(col, WHITE, .5), a * lit);
+  }
+  const dc = (c * 2) % 1, rp = (c * 2 + .1) % 1, water = mix(pal[0], WHITE, .4);
+  glow([[-.45, -1.05], [.45, -1.05]], water, .9, .6);
+  if (dc < .9) disc(0, -.35 - .65 * dc * dc, 60, water, .9);
+  for (let k = 0; k < 3; k++) {
+    const rr = .08 + .5 * rp * (1 - .25 * k);
+    glow(circle(0, -1.05, rr, 80).map(p => [p[0], -1.05 + (p[1] + 1.05) * .25]), water, 1, (1 - rp) * (1 - .25 * k));
+  }
+}
+
+/* 月亮: the moon waxes and wanes above restless water */
+function moon(t, sp, env) {
+  const T = 6 / sp.speed, w = TAU * t / T, pal = sp.palette, tn = sp.tension, C = [0, .45], R = .46, silver = mix(pal[3] || pal[pal.length - 1], WHITE, .55);
+  dust(env, w, mix(pal[0], WHITE, .5));
+  for (const [s, a] of [[2400, .04], [1200, .07], [500, .12]]) disc(C[0], C[1], s, silver, a);
+  glow(circle(C[0], C[1], R, 100), silver, 1, .5);
+  const pts = [];
+  for (let i = 0; i <= 40; i++) { const a = -Math.PI / 2 + Math.PI * i / 40; pts.push([C[0] + R * Math.cos(a), C[1] + R * Math.sin(a)]); }
+  for (let i = 0; i <= 40; i++) { const a = Math.PI / 2 - Math.PI * i / 40; pts.push([C[0] + R * Math.cos(w) * Math.cos(a), C[1] + R * Math.sin(a)]); }
+  path(pts); ctx.closePath(); ctx.fillStyle = rgba(silver, .92); ctx.fill();
+  const lit = .5 - .5 * Math.cos(w);
+  for (let k = 0; k < 6; k++) {
+    const y0 = -.3 - .17 * k, amp = (.012 + .03 * tn) * (1 + .3 * k), line = [];
+    for (let i = 0; i <= 60; i++) { const x = -.85 + 1.7 * i / 60; line.push([x, y0 + amp * Math.sin(x * 9 + k + w * (k % 2 ? 1 : -1))]); }
+    glow(line, palAt(pal, k / 5), 1.1, .55);
+    const x = .05 * Math.sin(w + k);
+    disc(x, y0 + amp * Math.sin(x * 9 + k + w * (k % 2 ? 1 : -1)), 50 / (1 + .3 * k), silver, .75 * (1 - k / 7) * lit);
+  }
+}
+
+/* 太阳: rays that pulse at different rates around a warm disc */
+function sun(t, sp, env) {
+  const T = 6 / sp.speed, w = TAU * t / T, pal = sp.palette, hope = sp.hope, C = [0, .15], N = 24, warm = pal[pal.length - 1];
+  dust(env, w, mix(warm, WHITE, .5));
+  const rot = TAU / N * (t / T);
+  for (let i = 0; i < N; i++) {
+    const a = i * TAU / N + rot, pulse = .5 + .5 * Math.sin(TAU * (i % 3 + 1) * t / T + i), r0 = .32, r1 = r0 + .1 + .2 * pulse + .1 * hope;
+    glow([[C[0] + r0 * Math.cos(a), C[1] + r0 * Math.sin(a)], [C[0] + r1 * Math.cos(a), C[1] + r1 * Math.sin(a)]], palAt(pal, i / N, true), 1.6, .9);
+  }
+  for (let k = 0; k < 12; k++) {
+    const a = k * TAU / 12 - rot * 3, rr = .78 + .03 * Math.sin(w * 2 + k);
+    disc(C[0] + rr * Math.cos(a), C[1] + rr * Math.sin(a), 22, palAt(pal, k / 12, true), .8);
+  }
+  glow(circle(C[0], C[1], .27, 100), warm, 1.4);
+  for (const [s, a] of [[2800, .05], [1500, .1], [700, .2], [300, 1]]) disc(C[0], C[1], s, mix(warm, WHITE, .4), a);
+}
+
+/* 隐者: one small lantern wanders a closed path through drifting fog */
+function hermit(t, sp, env) {
+  const T = 6 / sp.speed, w = TAU * t / T, pal = sp.palette, r = env.rnd, warm = pal[pal.length - 1];
+  const at = tm => { const a = TAU * tm / T; return [.5 * Math.sin(a), .2 + .28 * Math.sin(2 * a)]; };
+  const L = at(t);
+  for (let i = 0; i < 36; i++) {
+    const x = ((r[i] + (i % 2 ? 1 : 2) * t / T) % 1) * 2 - 1, y = -.8 + 1.7 * r[(i + 20) % 60];
+    const d2 = (x - L[0]) ** 2 + (y - L[1]) ** 2;
+    disc(x, y, 6 + 8 * r[(i + 40) % 60], mix(pal[0], WHITE, .5), .12 + .7 * Math.exp(-d2 / .06));
+  }
+  for (const [k, amp] of [[0, .12], [1, .08]]) {
+    const ridge = [];
+    for (let i = 0; i <= 60; i++) { const x = -.95 + 1.9 * i / 60; ridge.push([x, -1.0 - k * .1 + amp * Math.sin(x * 5 + 1 + k) + .6 * amp * Math.sin(x * 13 + k * 3)]); }
+    glow(ridge, pal[1], 1.1, .5);
+  }
+  const trail = Array.from({ length: 40 }, (_, k) => at(t - (39 - k) * T / 240));
+  taper(trail, m => mix(warm, pal[0], 1 - m), m => .3 + 1.6 * m, 12, .9);
+  for (const [s, a] of [[1800, .06], [700, .14], [200, .4], [30, 1]]) disc(L[0], L[1], s, mix(warm, WHITE, .35), a);
+}
+
+/* 命运之轮: rings cut into arcs, each ring turning its own way */
+function wheel(t, sp, env) {
+  const T = 6 / sp.speed, w = TAU * t / T, pal = sp.palette, C = [0, .05], mult = [1, -1, 2, -2, 1], counts = [3, 4, 5, 6, 8];
+  dust(env, w, mix(pal[0], WHITE, .5));
+  for (let k = 0; k < 8; k++) {
+    const a = k * TAU / 8 + TAU / 8 * t / T;
+    glow([[C[0] + .05 * Math.cos(a), C[1] + .05 * Math.sin(a)], [C[0] + .86 * Math.cos(a), C[1] + .86 * Math.sin(a)]], pal[0], .6, .25);
+  }
+  for (let i = 0; i < 5; i++) {
+    const n = counts[i], rad = .16 + .15 * i, rt = mult[i] * TAU / n * t / T;
+    for (let s = 0; s < n; s++) {
+      const a0 = rt + s * TAU / n + .08, a1 = rt + (s + 1) * TAU / n - .08, pts = [];
+      for (let j = 0; j <= 24; j++) { const a = a0 + (a1 - a0) * j / 24; pts.push([C[0] + rad * Math.cos(a), C[1] + rad * Math.sin(a)]); }
+      glow(pts, palAt(pal, (i + s / n) / 5), 2.2 - .1 * i);
+    }
+  }
+  for (let k = 0; k < 48; k++) { const a = k * TAU / 48 + TAU / 48 * t / T; disc(C[0] + .9 * Math.cos(a), C[1] + .9 * Math.sin(a), 6, pal[2 % pal.length], .6); }
+  disc(C[0], C[1], 120, mix(pal[pal.length - 1], WHITE, .4), 1);
+}
+
+/* 死神: a ring breaks into grains, and a seedling grows where it was */
+function death(t, sp, env) {
+  const T = 6 / sp.speed, c = cyc(t, T), pal = sp.palette, r = env.rnd, C = [0, .2], R = .5, M = 120, warm = pal[pal.length - 1];
+  dust(env, TAU * t / T, mix(pal[0], WHITE, .5));
+  const disp = smooth((c - .35) / .35) * (1 - smooth((c - .85) / .15));
+  const ringA = Math.max(1 - smooth((c - .3) / .1), smooth((c - .9) / .1));
+  if (ringA > .02) glow(circle(C[0], C[1], R, 120), pal[1], 1.6, ringA);
+  for (let i = 0; i < M; i++) {
+    const a0 = i * TAU / M, dir = a0 + (r[i % 60] - .5) * 1.2, D = .9 * (.4 + .6 * r[(i + 13) % 60]);
+    const x = C[0] + R * Math.cos(a0) + disp * D * Math.cos(dir), y = C[1] + R * Math.sin(a0) + disp * D * Math.sin(dir) - .3 * disp * disp;
+    disc(x, y, 5 + 4 * r[(i + 31) % 60], palAt(pal, i / M, true), .9 * (1 - .6 * disp));
+  }
+  const g = smooth((c - .55) / .3) * (1 - smooth((c - .9) / .1)), base = [0, C[1] - .2];
+  if (g > 0) {
+    glow([base, [0, base[1] + .45 * g]], warm, 1.8, g);
+    for (const sgn of [-1, 1]) {
+      const leaf = Array.from({ length: 16 }, (_, k) => { const u = k / 15; return [sgn * (.14 * g) * Math.sin(Math.PI * u) * .9 + sgn * .07 * g * u, base[1] + .3 * g + .1 * g * u + .035 * g * Math.sin(Math.PI * u)]; });
+      glow(leaf, warm, 1.2, g);
+    }
+    disc(base[0], base[1], 40, mix(warm, WHITE, .3), g);
+  }
+}
+
+/* 愚者: a small figure walks to the edge and steps out onto nothing */
+function fool(t, sp, env) {
+  const T = 6 / sp.speed, c = cyc(t, T), pal = sp.palette, r = env.rnd, hope = sp.hope, edge = .1;
+  dust(env, TAU * t / T, mix(pal[0], WHITE, .5));
+  glow([[-.95, -.35], [edge, -.35]], mix(pal[0], WHITE, .35), 1.6, .8);
+  glow([[edge, -.35], [edge - .02, -.9], [edge + .02, -1.3]], pal[1], 1.2, .55);
+  for (let k = 0; k < 8; k++) {
+    const x = .25 + .6 * r[k], y = -.5 - ((r[k + 10] + t / T * (1 + k % 2)) % 1) * .9;
+    glow([[x, y], [x, y - .08]], pal[2 % pal.length], .8, .35);
+  }
+  const warm = pal[pal.length - 1];
+  for (const [s, a] of [[1600, .05], [600, .12], [160, .6]]) disc(.58, .85, s * (.6 + .4 * hope), mix(warm, WHITE, .3), a);
+  const pos = cc => {
+    if (cc < .45) { const u = cc / .45; return [-.8 + (edge + .8) * u, -.31 + .02 * Math.abs(Math.sin(TAU * 6 * u))]; }
+    const v = (cc - .45) / .55; return [edge + .6 * v, -.31 + (.15 + .6 * hope) * Math.sin(Math.PI * v)];
+  };
+  const alpha = clamp(c / .08, 0, 1) * (1 - smooth((c - .9) / .1)), P = pos(c);
+  for (let k = 1; k <= 12; k++) { const q = pos(Math.max(0, c - k * .012)); disc(q[0], q[1], 30 * (1 - k / 13), warm, .4 * (1 - k / 13) * alpha); }
+  for (const [s, a] of [[500, .08], [160, .25], [60, 1]]) disc(P[0], P[1], s, mix(warm, WHITE, .5), a * alpha);
+}
+
+const DESIGNS = { "open-rings": openRings, "knot-and-flower": knotFlower, "tentacle-rings": tentacleRings, tower, star, moon, sun, hermit, wheel, death, fool };
+const CARD = { "open-rings": "女祭司", "knot-and-flower": "倒吊人", "tentacle-rings": "恶魔", tower: "塔", star: "星星", moon: "月亮", sun: "太阳", hermit: "隐者", wheel: "命运之轮", death: "死神", fool: "愚者" };
+const DEFAULT_PAL = {
+  "open-rings": ["#6e78ff", "#aa6ef0", "#e66ebe", "#ff7d8c", "#ffaa55", "#ffcd6e", "#ffe496"],
+  "knot-and-flower": ["#8c9ac0", "#b18aa8", "#d06c74", "#ffb25c", "#ffd88a"],
+  "tentacle-rings": ["#ff5a4a", "#ffb340", "#8cff5a", "#40e0d0", "#5a7bff", "#c05aff"],
+  tower: ["#5a7bff", "#8a5aff", "#ff5a8a", "#ff9a40", "#ffe27a"],
+  star: ["#4a63ff", "#6e9bff", "#7fe0ff", "#b8f0ff", "#fff3c0"],
+  moon: ["#3a4aff", "#6a6aff", "#9a8aff", "#c8c0ff", "#eef0ff"],
+  sun: ["#ff6a4a", "#ff9a3a", "#ffc83a", "#ffe86a", "#fff5b0"],
+  hermit: ["#4a5a8a", "#6a7aaa", "#8a9ac8", "#c0b890", "#ffd88a"],
+  wheel: ["#ff5a7a", "#ffa04a", "#e8e04a", "#4ae0a0", "#4a9aff", "#a04aff"],
+  death: ["#6a6a8a", "#8a7a9a", "#b08a8a", "#d8a878", "#ffe0a0"],
+  fool: ["#6a8aff", "#9a7aff", "#ff8ab0", "#ffc060", "#fff0a0"],
+};
+
+/* ---------- a card = spec + seed ---------- */
+function newEnv(seed) {
+  const r = rng(seed), d = [];
+  for (let i = 0; i < 70; i++) d.push({ x: -.93 + r() * 1.86, y: -1.38 + r() * 2.76, ph: r() * TAU, sz: 1 + r() * 4 });
+  return { seed, dust: d, p: r() * 6, toff: r() * 6, rnd: Array.from({ length: 60 }, r) };
+}
+let current = null, t0 = performance.now();
+const cv = document.getElementById("cv");
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function paint(t, canvas = cv) {
+  if (!current) return;
+  const c = canvas.getContext("2d");
+  ctx = c; W = canvas.width; H = canvas.height; PX = 1.39 * W / 600;
+  background(current.spec.bg);
+  DESIGNS[current.spec.design](t + current.env.toff, current.spec, current.env);
+  frame();
+}
+function sizeCanvas() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), w = cv.parentElement.clientWidth || 360;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(w * 1.5 * dpr);
+}
+let lastDraw = 0;
+function tick(now) {
+  if (now - lastDraw > 33) { lastDraw = now; paint((now - t0) / 1000); }
+  if (!reduce) requestAnimationFrame(tick);
+}
+function setCard(spec, env, tag) {
+  current = { spec, env };
+  document.getElementById("title").textContent = spec.title;
+  document.getElementById("line").textContent = spec.line;
+  const b = document.getElementById("back");
+  b.style.background = `linear-gradient(${rgbHex(spec.bg[0])}, ${rgbHex(spec.bg[1])})`;
+  const acc = rgbHex(mix(spec.palette[spec.palette.length - 1], [255, 255, 255], .25));
+  for (const id of ["o1", "o2", "o3"]) document.getElementById(id).setAttribute("stroke", acc);
+  document.getElementById("tag").textContent = tag || "";
+  document.getElementById("care").hidden = !spec.care;
+  document.getElementById("again").disabled = false;
+  if (reduce) paint(1.5);
+}
+
+/* ---------- reading the description ---------- */
+
+const hexOk = h => typeof h === "string" && /^#[0-9a-f]{6}$/i.test(h.trim());
+function sanitize(o, text) {
+  o = o && typeof o === "object" ? o : {};
+  const design = DESIGNS[o.design] ? o.design : "open-rings";
+  let pal = Array.isArray(o.palette) ? o.palette.filter(hexOk).map(h => hexRgb(h.trim())) : [];
+  if (pal.length < 3) pal = DEFAULT_PAL[design].map(hexRgb);
+  let bg = Array.isArray(o.bg) ? o.bg.filter(hexOk).map(h => hexRgb(h.trim())) : [];
+  if (bg.length < 2) bg = [[6, 8, 22], [24, 12, 38]];
+  bg = bg.slice(0, 2).map(c => { const lum = (c[0] * .3 + c[1] * .59 + c[2] * .11) / 255; return lum > .14 ? c.map(v => v * .14 / lum) : c; });
+  const num = (v, a, b, d) => (typeof v === "number" && isFinite(v) ? clamp(v, a, b) : d);
+  const rings = Math.round(num(o.rings, design === "tentacle-rings" ? 6 : 5, design === "tentacle-rings" ? 12 : 10, 7));
+  return {
+    design, palette: pal, bg,
+    title: String(o.title || "无名").slice(0, 14),
+    line: String(o.line || text.slice(0, 30)).slice(0, 60),
+    speed: num(o.speed, .6, 1.6, 1), tension: num(o.tension, 0, 1, .4), hope: num(o.hope, 0, 1, .5),
+    rings, systems: Math.round(num(o.systems, 1, 3, 1)), care: o.care === true,
+  };
+}
+const STARTER = sanitize({
+  design: "open-rings", title: "示例", line: "这是一张示例牌。写下你的话，抽一张自己的。",
+  palette: DEFAULT_PAL["open-rings"], bg: ["#04071a", "#1a0b2a"], speed: 1, tension: .3, hope: .6, rings: 7, systems: 1, care: false,
+}, "");
+
+/* No AI anywhere: a small lexicon turns words into a card. The same text always gives the same reading; only the random seed changes between draws. */
+const THEMES = [
+  { title: "女祭司", design: "open-rings", tension: .3, hope: .55, speed: .85, pal: ["#6e78ff", "#aa6ef0", "#e66ebe", "#ff9a5c", "#ffd27a"],
+    re: /等|盼|想知道|是否|爱不爱|在不在乎|有没有|回复|消息|问我|不知道.{0,6}(他|她|你)|沉默|没有答案|wait|wonder|hoping|does (he|she)|ob er|warte|Antwort/i },
+  { title: "倒吊人", design: "knot-and-flower", tension: .75, hope: .35, speed: .9, pal: ["#8c9ac0", "#b18aa8", "#d06c74", "#ffb25c", "#ffd88a"],
+    re: /放不下|困住|困在|抓着|执念|父母|爸爸|妈妈|家人|窒息|逃不|出不去|无法放手|动弹不得|stuck|trapped|let go|can'?t leave|loslassen|gefangen|festhalten/i },
+  { title: "恶魔", design: "tentacle-rings", tension: .85, hope: .3, speed: 1.15, pal: ["#ff5a4a", "#ffb340", "#8cff5a", "#40e0d0", "#5a7bff", "#c05aff"],
+    re: /焦虑|纠缠|缠|恶心|害怕|恐惧|反复|停不下来|乱成|着迷|上瘾|控制不了|anxi|obsess|spiral|tangle|panic|Angst|grübel|Gedankenkarussell/i },
+  { title: "塔", design: "tower", tension: .9, hope: .2, speed: 1.1, pal: ["#5a7bff", "#8a5aff", "#ff5a8a", "#ff9a40", "#ffe27a"],
+    re: /崩溃|崩塌|塌了|垮了|变故|突然|毁了|倒塌|坠|掉下|摔|深渊|下沉|crash|collapse|shatter|falling|sinking|abyss|zusammenbr|stürz|Abgrund/i },
+  { title: "星星", design: "star", tension: .1, hope: .92, speed: .8, pal: ["#4a63ff", "#6e9bff", "#7fe0ff", "#b8f0ff", "#fff3c0"],
+    re: /力量|好起来|恢复|慢慢好|平静|轻松|放松|感觉好|有希望|治愈|calm|heal|recover|better|hope|stronger|ruhig|besser|Kraft|Hoffnung/i },
+  { title: "月亮", design: "moon", tension: .55, hope: .35, speed: .75, pal: ["#3a4aff", "#6a6aff", "#9a8aff", "#c8c0ff", "#eef0ff"],
+    re: /想念|思念|想他|想她|想你|失眠|睡不着|梦见|梦到|做梦|不安|看不清|迷茫|模糊|夜里|dream|insomn|uneasy|confus|miss(ing)? (him|her|you)|Traum|unruhig|vermiss/i },
+  { title: "太阳", design: "sun", tension: .15, hope: .98, speed: 1.2, pal: ["#ff6a4a", "#ff9a3a", "#ffc83a", "#ffe86a", "#fff5b0"],
+    re: /开心|快乐|高兴|喜欢|兴奋|幸福|温暖|happy|joy|excited|glad|froh|glücklich|Freude/i },
+  { title: "隐者", design: "hermit", tension: .3, hope: .3, speed: .65, pal: ["#4a5a8a", "#6a7aaa", "#8a9ac8", "#c0b890", "#ffd88a"],
+    re: /累|疲惫|倦|没力气|没有力气|麻木|空空|孤独|一个人|独处|不想说话|想躲|tired|exhaust|numb|empty|lonely|alone|müde|erschöpf|leer|einsam/i },
+  { title: "命运之轮", design: "wheel", tension: .5, hope: .4, speed: 1, pal: ["#ff5a7a", "#ffa04a", "#e8e04a", "#4ae0a0", "#4a9aff", "#a04aff"],
+    re: /又是|又一次|一直这样|循环|轮回|周而复始|总是|重复|每次都|again and again|cycle|same thing|always|repeat|immer wieder|Kreislauf/i },
+  { title: "死神", design: "death", tension: .45, hope: .45, speed: .8, pal: ["#6a6a8a", "#8a7a9a", "#b08a8a", "#d8a878", "#ffe0a0"],
+    re: /结束|告别|终于放手|离开了|分手|失去|去世|再见|过去了|ending|goodbye|farewell|over now|passed away|Abschied|Ende|vorbei/i },
+  { title: "愚者", design: "fool", tension: .2, hope: .8, speed: .95, pal: ["#6a8aff", "#9a7aff", "#ff8ab0", "#ffc060", "#fff0a0"],
+    re: /开始|新的|重新|第一次|出发|决定|勇气|冒险|试试|start|begin|new|leap|brave|Anfang|neu|wagen|mutig/i },
+];
+const SELF_HARM = /自杀|不想活|想死|结束(自己的)?生命|伤害自己|割腕|suicid|kill myself|end my life|want to die|selbstmord|umbringen|nicht mehr leben/i;
+
+function localSpec(text) {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const hits = THEMES.map(t => ({ t, n: (flat.match(new RegExp(t.re.source, "gi")) || []).length })).filter(h => h.n);
+  const seed = [...flat].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7), r = rng(seed);
+  let top, tension, hope, speed;
+  if (hits.length) {
+    hits.sort((x, y) => y.n - x.n);
+    top = hits[0].t;
+    const wsum = hits.reduce((a, h) => a + h.n, 0);
+    tension = hits.reduce((a, h) => a + h.t.tension * h.n, 0) / wsum;
+    hope = hits.reduce((a, h) => a + h.t.hope * h.n, 0) / wsum;
+    speed = hits.reduce((a, h) => a + h.t.speed * h.n, 0) / wsum;
+  } else {
+    const keys = Object.keys(DESIGNS), dz = keys[seed % keys.length]; top = { title: CARD[dz], design: dz, pal: null };
+    tension = .25 + r() * .5; hope = .3 + r() * .5; speed = .7 + r() * .6;
+  }
+  /* the line on the back is the writer's own sentence: the one that triggered the theme, else the first */
+  const sentences = (flat.match(/[^。！？!?；;.]+[。！？!?；;.]?/g) || []).map(x => x.trim()).filter(Boolean);
+  let pick = (hits.length && sentences.find(x => top.re.test(x))) || sentences[0] || flat;
+  const cut = pick.replace(/[。！？!?.；;]+$/, "");
+  const line = cut.length > 26 ? cut.slice(0, 25) + "…" : cut;
+  return sanitize({
+    design: top.design, title: top.title, line, palette: top.pal || DEFAULT_PAL[top.design],
+    speed, tension, hope, rings: 6 + (seed >> 3) % 4, systems: top.design === "tentacle-rings" ? 1 + (seed >> 5) % 3 : 1,
+    care: SELF_HARM.test(flat),
+  }, text);
+}
+
+const $ = id => document.getElementById(id);
+const statusEl = $("status");
+function say(msg, err) { statusEl.textContent = msg || ""; statusEl.classList.toggle("err", !!err); }
+
+let downloads = null, lastText = "";
+(async () => {
+  try { downloads = await claude.use("downloads"); } catch (e) { downloads = null; }
+  if (downloads || typeof claude === "undefined") $("save").hidden = false;
+})();
+
+function draw(text) {
+  lastText = text;
+  $("card").classList.remove("flipped");
+  setCard(localSpec(text), newEnv((Math.random() * 2 ** 32) >>> 0), "你的牌");
+  say("");
+  $("hint").textContent = "点一下牌，翻到背面看字";
+  if (matchMedia("(max-width: 780px)").matches) $("card").scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+}
+
+$("form").addEventListener("submit", e => {
+  e.preventDefault();
+  const text = $("text").value.trim();
+  if (!text) { say("先写几个字：一个梦，或此刻的感受。", true); $("text").focus(); return; }
+  draw(text);
+});
+$("again").addEventListener("click", () => {
+  if (!current) return;
+  setCard(current.spec, newEnv((Math.random() * 2 ** 32) >>> 0), "你的牌");
+  $("card").classList.remove("flipped");
+});
+$("card").addEventListener("click", () => $("card").classList.toggle("flipped"));
+$("save").addEventListener("click", async () => {
+  if (!current) return;
+  const c = document.createElement("canvas"); c.width = 900; c.height = 1350;
+  paint(1.5 + (performance.now() - t0) / 1000 % 6, c);
+  const blob = await new Promise(res => c.toBlob(res, "image/png"));
+  if (!downloads) {
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "今日塔罗.png";
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); say("已保存。"); return;
+  }
+  try { await downloads.save({ filename: "今日塔罗.png", data: blob }); say("已保存。"); }
+  catch (e) { say(e && e.code === "declined" ? "" : "这里不能保存文件。可以截屏。", e && e.code !== "declined"); }
+});
+const TRIES = ["梦见自己在一座没有出口的图书馆里，找一本一直找不到的书。", "今天特别累，但我不知道自己在累什么。", "想念一个已经不联系的朋友，又怕打扰他。"];
+for (const s of TRIES) {
+  const li = document.createElement("li"), b = document.createElement("button");
+  b.type = "button"; b.textContent = s; b.addEventListener("click", () => { $("text").value = s; $("text").focus(); });
+  li.append(b); $("tries").append(li);
+}
+
+sizeCanvas();
+setCard(STARTER, newEnv(11), "示例牌");
+$("again").disabled = true;
+new ResizeObserver(() => { sizeCanvas(); if (reduce) paint(1.5); }).observe(cv.parentElement);
+if (reduce) paint(1.5); else requestAnimationFrame(tick);
+</script>
+</body>
+</html>
